@@ -1,0 +1,464 @@
+:root {
+  --ink: #e8f2f6;
+  --muted: #7d97a4;
+  --dim: #54707f;
+  --beam: #bfe7ff;
+  --seal: #d8483c;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  --display: "Archivo", "Helvetica Neue", Arial, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  background: #04090c;
+  color: var(--ink);
+  font-family: var(--display);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* the canvas never moves; only depth does */
+.stage {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+}
+.stage canvas { display: block; }
+
+/* six screens of scroll, empty by design */
+.shaft { height: 600vh; pointer-events: none; }
+
+/* vignette — free (a DOM layer, not a render pass): pulls the eye toward
+   the beam without costing a WebGL post-processing pass */
+.vignette {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  opacity: 0.08; /* Vignette.jsx drives this per-frame from depth */
+  transition: opacity 0.2s linear;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(0, 0, 0, 0) 45%,
+    rgba(0, 0, 0, 0.6) 100%
+  );
+}
+
+/* ---------------- HUD ---------------- */
+.hud {
+  position: fixed;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  font-family: var(--mono);
+}
+
+.hud__depth {
+  position: absolute;
+  top: 26px;
+  left: 28px;
+}
+.hud__depth b {
+  display: block;
+  font-size: 15px;
+  letter-spacing: 0.06em;
+  color: var(--beam);
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
+.hud__depth em {
+  font-style: normal;
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+.hud__modes {
+  position: absolute;
+  bottom: 30px;
+  left: 28px;
+  display: flex;
+  gap: 16px;
+}
+.hud__modes i {
+  font-style: normal;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  color: #3f5866;
+  border-bottom: 2px solid transparent;
+  padding-bottom: 4px;
+  transition: color 0.2s, border-color 0.2s;
+}
+.hud__modes i.active {
+  color: var(--ink);
+  border-bottom-color: var(--beam);
+}
+
+.hud__runtime {
+  position: absolute;
+  bottom: 30px;
+  right: 28px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.prompt {
+  position: absolute;
+  left: 50%;
+  bottom: 84px;
+  transform: translateX(-50%);
+  font-size: 10.5px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: #2a3b44;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.prompt span {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--beam);
+  animation: pulse 2.4s ease-in-out infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 0.2; }
+  50% { opacity: 1; }
+}
+
+/* ---------------- beam-masked copy (frame 03) ---------------- */
+.beamtext {
+  position: fixed;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.14em;
+}
+.beamtext span {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  white-space: nowrap;
+}
+.beamtext__ghost span { color: rgba(150, 190, 210, 0.13); }
+.beamtext__ghost span.pinned { color: rgba(191, 231, 255, 0.55); }
+.beamtext__lit {
+  position: absolute;
+  inset: 0;
+}
+.beamtext__lit span {
+  color: #eaf7ff;
+  text-shadow: 0 0 18px rgba(160, 215, 255, 0.4);
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.revealall {
+  position: absolute;
+  top: 24px;
+  right: 26px;
+  pointer-events: auto;
+  background: rgba(10, 20, 27, 0.7);
+  border: 1px solid #1b2e3a;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  padding: 7px 10px;
+  border-radius: 2px;
+  cursor: pointer;
+}
+.revealall:hover { color: var(--beam); border-color: #2c4d5f; }
+
+/* ---------------- debug ---------------- */
+.debug {
+  position: fixed;
+  right: 22px;
+  bottom: 62px;
+  z-index: 5;
+  width: 190px;
+  background: rgba(7, 15, 20, 0.92);
+  border: 1px solid #1b2e3a;
+  border-radius: 3px;
+  padding: 12px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+.debug--hint {
+  width: auto;
+  padding: 6px 9px;
+  background: none;
+  border-color: transparent;
+  color: #22343d;
+}
+.debug__row {
+  display: flex;
+  justify-content: space-between;
+  padding: 3px 0;
+}
+.debug__row b {
+  color: var(--beam);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.debug input[type="range"] { width: 100%; margin: 8px 0; accent-color: #bfe7ff; }
+.debug__beats { display: flex; flex-wrap: wrap; gap: 4px; }
+.debug__beats button {
+  flex: 1 0 auto;
+  background: #0f1d26;
+  border: 1px solid #1b2e3a;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 9.5px;
+  padding: 5px 0;
+  border-radius: 2px;
+  cursor: pointer;
+}
+.debug__beats button:hover { color: var(--beam); border-color: #2c4d5f; }
+
+@media (prefers-reduced-motion: reduce) {
+  .prompt span { animation: none; opacity: 0.8; }
+}
+
+/* ---------------- sound toggle ---------------- */
+.soundtoggle {
+  position: fixed;
+  /* sits under the reveal-all button, which shares this corner */
+  top: 62px;
+  right: 26px;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  pointer-events: auto;
+  background: rgba(10, 20, 27, 0.55);
+  border: 1px solid #1b2e3a;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  padding: 7px 11px;
+  border-radius: 2px;
+  cursor: pointer;
+  transition: color 0.2s, border-color 0.2s;
+}
+.soundtoggle:hover { color: var(--beam); border-color: #2c4d5f; }
+
+.soundtoggle__bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 11px;
+}
+.soundtoggle__bars i {
+  width: 2px;
+  background: var(--beam);
+  border-radius: 1px;
+  animation: eq 1.1s ease-in-out infinite;
+}
+.soundtoggle__bars i:nth-child(1) { height: 4px;  animation-delay: 0s; }
+.soundtoggle__bars i:nth-child(2) { height: 10px; animation-delay: 0.16s; }
+.soundtoggle__bars i:nth-child(3) { height: 6px;  animation-delay: 0.32s; }
+.soundtoggle__bars i:nth-child(4) { height: 9px;  animation-delay: 0.48s; }
+
+.soundtoggle__bars.is-off i {
+  animation: none;
+  height: 3px;
+  background: #35505f;
+}
+
+@keyframes eq {
+  0%, 100% { transform: scaleY(0.4); }
+  50%      { transform: scaleY(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .soundtoggle__bars i { animation: none; }
+}
+
+/* ---------------- input ---------------- */
+/*
+ * pan-y, not none: a vertical drag stays the browser's (that's the
+ * descent — scroll IS depth), while horizontal movement comes through to
+ * us for spinning the torch and aiming the beam. That one line is the
+ * whole touch story; without it a phone either can't scroll or can't aim.
+ */
+.stage canvas { touch-action: pan-y; }
+
+body.is-grabbing,
+body.is-grabbing * { cursor: grabbing !important; user-select: none; }
+
+/* ---------------- part labels (beat 05) ---------------- */
+.partlabel {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #cfe6f5;
+  text-shadow: 0 0 10px rgba(4, 14, 24, 0.95), 0 1px 2px rgba(0, 0, 0, 0.8);
+  opacity: 0;
+  transition: opacity 0.25s linear;
+  transform: translateX(14px);
+}
+.partlabel i {
+  width: 5px;
+  height: 5px;
+  flex: 0 0 5px;
+  border-radius: 50%;
+  background: var(--beam);
+  box-shadow: 0 0 8px rgba(191, 231, 255, 0.8);
+}
+
+/* the wash as the camera passes through the surface */
+.surfacefade {
+  position: fixed;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  opacity: 0;
+  background: linear-gradient(
+    to bottom,
+    rgba(226, 240, 248, 0.92) 0%,
+    rgba(160, 205, 230, 0.8) 45%,
+    rgba(60, 120, 165, 0.55) 100%
+  );
+}
+
+/* A screen-projected hit target; the physical GLB switch remains the visual. */
+.switch-control {
+  position: fixed; z-index: 4; transform: translate(-50%, -50%);
+  padding: 0; border: 1px solid rgba(203,242,242,0.4); border-radius: 50%;
+  background: transparent; cursor: pointer; touch-action: none;
+  box-shadow: 0 0 0 5px rgba(194,234,235,0.035); visibility: hidden;
+}
+.switch-control[data-focused="true"] { border-color: transparent; box-shadow: none; }
+.switch-control:focus-visible { outline: 2px solid #bfe7ff; outline-offset: 5px; }
+
+.hud[data-surface="true"] .hud__depth b { color: #173f46; }
+.hud[data-surface="true"] .hud__depth em,
+.hud[data-surface="true"] .hud__runtime { color: #305861; }
+
+/* ---------------- product identity / contact ---------------- */
+.productcard {
+  position: fixed;
+  top: 26px;
+  left: 50%;
+  right: auto;
+  z-index: 6;
+  width: 220px;
+  text-align: center;
+  pointer-events: auto;
+  color: var(--ink);
+  font-family: var(--mono);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translate(-50%, 8px);
+  transition: opacity 0.6s ease, transform 0.6s ease, visibility 0.6s;
+}
+.productcard[data-visible="true"] {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transform: translate(-50%, 0);
+}
+.productcard[hidden] { display: none; }
+.productcard__eyebrow {
+  color: #7894a0;
+  font-size: 8px;
+  letter-spacing: 0.17em;
+  line-height: 1.4;
+}
+.productcard__name {
+  margin-top: 3px;
+  color: #e6f5f7;
+  font-family: var(--display);
+  font-size: 23px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  line-height: 1;
+}
+.productcard__type {
+  margin-top: 6px;
+  color: #68828d;
+  font-size: 8px;
+  letter-spacing: 0.2em;
+}
+.productcard__cta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 13px auto 0;
+  padding: 8px 10px;
+  border: 1px solid rgba(191, 231, 255, 0.34);
+  border-radius: 2px;
+  background: rgba(8, 20, 27, 0.55);
+  color: #c7e5ee;
+  cursor: pointer;
+  font: 9px var(--mono);
+  letter-spacing: 0.13em;
+  transition: background 0.2s, border-color 0.2s, color 0.2s;
+}
+.productcard__cta:hover,
+.productcard__cta:focus-visible {
+  border-color: var(--beam);
+  background: rgba(12, 34, 44, 0.8);
+  color: #f2fbff;
+  outline: none;
+}
+.productcard__cta span,
+.productcard__panel span { color: var(--beam); font-size: 13px; }
+.productcard__panel {
+  width: 220px;
+  margin-top: 8px;
+  padding: 11px 12px;
+  border: 1px solid #284653;
+  border-radius: 2px;
+  background: rgba(5, 15, 21, 0.92);
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.22);
+}
+.productcard__panel p {
+  margin: 0 0 10px;
+  color: #88a2ac;
+  font: 10px/1.6 var(--mono);
+  letter-spacing: 0.03em;
+}
+.productcard__panel a {
+  color: #d6f0f4;
+  font: 9px var(--mono);
+  letter-spacing: 0.08em;
+  text-decoration: none;
+}
+.productcard__panel a:hover { color: var(--beam); }
+
+@media (max-width: 600px) {
+  .prompt { width: calc(100% - 48px); justify-content: center; text-align: center; line-height: 1.8; }
+  .hud__modes { gap: 12px; }
+  .hud__runtime { bottom: 58px; }
+  .productcard { top: 116px; left: 50%; right: auto; width: 200px; }
+  .productcard__name { font-size: 20px; }
+  .productcard__panel { width: 200px; }
+}
+
+.loading-screen { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; background: radial-gradient(ellipse at 50% 20%, #103f49, #020910 75%); color: #d6f0f4; text-align: center; }
+.loading-screen__content { width: min(320px, 80vw); }
+.loading-screen h1 { font-family: var(--display); font-size: clamp(26px, 6vw, 36px); letter-spacing: .12em; margin: 18px 0 30px; }
+.loading-screen p { font: 11px/1.8 var(--mono); color: #9fbfc7; }
+.loading-screen__label { letter-spacing: .2em; }
+.loading-screen__track { height: 2px; background: #274752; overflow: hidden; margin-bottom: 18px; }
+.loading-screen__track span { display: block; height: 100%; background: #bfe7ff; transform-origin: left; transition: transform .3s ease; }
+.loading-screen button { background: transparent; border: 1px solid #89bdca; color: #d6f0f4; padding: 12px 18px; cursor: pointer; }

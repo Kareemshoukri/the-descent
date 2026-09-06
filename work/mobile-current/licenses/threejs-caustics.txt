@@ -1,0 +1,7 @@
+This project adapts the GPU height/velocity water simulation approach from
+Martin Renou's threejs-caustics project:
+https://github.com/martinRenou/threejs-caustics
+
+Copyright (c) 2020 Martin Renou
+Licensed under the BSD-3-Clause license. The complete license text is kept in
+the reference checkout under work/caustics-reference/LICENSE.txt.
